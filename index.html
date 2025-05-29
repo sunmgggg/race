@@ -1,0 +1,250 @@
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>유령 운동회 (최종 통합)</title>
+  <style>
+    body { font-family: sans-serif; margin: 20px; }
+    h1, h3 { text-align: center; }
+    .popup { display: none; position: fixed; top: 20%; left: 50%; transform: translateX(-50%);
+             padding: 20px; background: white; border: 2px solid black; z-index: 1000; max-width: 90vw; }
+    table { border-collapse: collapse; width: 100%; font-size: 1.1em; }
+    th, td { padding: 10px; min-width: 40px; text-align: center; border: 1px solid #ccc; }
+    button { padding: 10px 16px; margin: 5px; font-size: 1em; }
+    select { font-size: 1em; padding: 5px; margin: 2px 0; }
+    @media (max-width: 768px) {
+      table, th, td { font-size: 0.85em; padding: 6px; }
+      button { font-size: 0.9em; padding: 6px 10px; }
+      select { font-size: 0.9em; padding: 4px; }
+    }
+  </style>
+</head>
+<body>
+  <h1>👻 유령 운동회 (최종 통합)</h1>
+  <div id="app">게임을 불러오는 중입니다...</div>
+
+  <div id="teamHintPopup" class="popup">
+    <h3 id="teamHintTitle">팀 힌트</h3>
+    <ul id="teamHintList"></ul>
+    <button onclick="document.getElementById('teamHintPopup').style.display='none'">닫기</button>
+  </div>
+
+  <div id="finalAnswerPopup" class="popup">
+    <h3>🏁 최종 순위</h3>
+    <ul id="finalRankingList"></ul>
+    <button onclick="document.getElementById('finalAnswerPopup').style.display='none'">닫기</button>
+  </div>
+
+  <script>
+    const ghostNames = ["드라큘라", "프랑켄슈타인", "달걀귀신", "구미호", "처녀귀신", "늑대인간", "호박귀신", "해골"];
+    const allHints = [
+      "드라큘라는 구미호보다 늦게 도착했다.",
+      "프랑켄슈타인은 3등 안에 들지 못했다.",
+      "해골은 1등이나 2등이다.",
+      "달걀귀신은 호박귀신보다 앞서 있다.",
+      "늑대인간은 중위권이다.",
+      "처녀귀신은 4등보다 낮다.",
+      "프랑켄슈타인은 해골보다 뒤에 있다.",
+      "호박귀신은 드라큘라보다 빠르다.",
+      "달걀귀신은 6등보다 빠르다.",
+      "구미호는 드라큘라보다 2등 이상 앞서 있다.",
+      "처녀귀신은 7등이다.",
+      "늑대인간은 달걀귀신보다 늦다.",
+      "프랑켄슈타인은 최하위권이다.",
+      "구미호는 3등 안에 있다.",
+      "드라큘라는 최상위권이 아니다.",
+      "해골은 호박귀신보다 느리다."
+    ];
+
+    let teams = [];
+    let ghostPositions = {};
+    let currentRound = 0;
+    let revealedHints = new Set();
+
+    function setupGame() {
+      document.getElementById("app").innerHTML = `
+        <div>팀 수를 입력하세요 (2~8)</div>
+        <input id="team-count" type="number" min="2" max="8" />
+        <button onclick="createTeams()">다음</button>
+      `;
+    }
+
+    function createTeams() {
+      const count = parseInt(document.getElementById("team-count").value);
+      if (isNaN(count) || count < 2 || count > 8) return alert("2팀 이상, 8팀 이하로 입력하세요.");
+      let html = `<div>팀 이름 입력</div>`;
+      for (let i = 0; i < count; i++) {
+        html += `<div>팀 ${i + 1}: <input id="team-${i}" /></div>`;
+      }
+      html += `<button onclick="selectHints(${count})">다음</button>`;
+      document.getElementById("app").innerHTML = html;
+    }
+
+    function selectHints(count) {
+      teams = [];
+      for (let i = 0; i < count; i++) {
+        const name = document.getElementById("team-" + i).value.trim();
+        if (!name) return alert("팀 이름을 입력하세요.");
+        teams.push({ name: name, hints: [] });
+      }
+      let limit = (count <= 3 ? 2 : 1);
+      let html = `<div>힌트 선택 (팀당 ${limit}개)</div>`;
+      for (let t = 0; t < teams.length; t++) {
+        html += `<div><strong>${teams[t].name}</strong><br/>`;
+        for (let h = 0; h < allHints.length; h++) {
+          html += `<label><input type="checkbox" name="team-${t}" value="${h}" onchange="limitHint(${t}, ${limit})"> 힌트 ${h+1}</label><br/>`;
+        }
+        html += `</div><hr/>`;
+      }
+      html += `<button onclick="saveHints(${limit})">선택 완료</button>`;
+      document.getElementById("app").innerHTML = html;
+    }
+
+    function limitHint(teamIndex, max) {
+      const boxes = document.querySelectorAll(`input[name="team-${teamIndex}"]`);
+      const checked = Array.from(boxes).filter(b => b.checked);
+      if (checked.length > max) event.target.checked = false;
+    }
+
+    function saveHints(max) {
+      for (let t = 0; t < teams.length; t++) {
+        const selected = Array.from(document.querySelectorAll(`input[name="team-${t}"]`))
+          .filter(b => b.checked).map(b => parseInt(b.value));
+        if (selected.length !== max) return alert("모든 팀이 힌트를 정확히 선택해야 합니다.");
+        teams[t].hints = selected.map(i => allHints[i]);
+      }
+      showHintButtons();
+    }
+
+    function showHintButtons() {
+      let html = `<div>힌트 확인</div>`;
+      teams.forEach(team => {
+        html += `<button onclick="showTeamHints('${team.name}')">${team.name} 힌트 보기</button>`;
+      });
+      html += `<button onclick="startRace()">레이스 시작</button>`;
+      document.getElementById("app").innerHTML = html;
+    }
+
+    function showTeamHints(teamName) {
+      const team = teams.find(t => t.name === teamName);
+      const ul = document.getElementById("teamHintList");
+      ul.innerHTML = "";
+      team.hints.forEach(h => {
+        const li = document.createElement("li");
+        li.textContent = h;
+        ul.appendChild(li);
+      });
+      document.getElementById("teamHintTitle").textContent = teamName + "의 힌트";
+      document.getElementById("teamHintPopup").style.display = "block";
+    }
+
+    function startRace() {
+      ghostPositions = {};
+      ghostNames.forEach(g => ghostPositions[g] = 1);
+      currentRound = 0;
+      showRaceBoard();
+    }
+
+    function showRaceBoard() {
+      let html = `<h3>라운드 ${currentRound + 1}</h3><table><tr><th>칸</th>`;
+      ghostNames.forEach(g => html += `<th>${g}</th>`); html += "</tr>";
+      for (let i = 10; i >= 1; i--) {
+        html += `<tr><td>${i}</td>`;
+        ghostNames.forEach(g => {
+          html += `<td>${ghostPositions[g] === i ? getEmoji(g) : ""}</td>`;
+        });
+        html += "</tr>";
+      }
+      html += "</table><br/>";
+      html += `<button onclick="nextRound()">다음 라운드</button> `;
+      html += `<button onclick="showRandomHint()">새로운 힌트 보기</button> `;
+      html += `<button onclick="predict()">최종 예측</button>`;
+      document.getElementById("app").innerHTML = html;
+    }
+
+    function nextRound() {
+      if (currentRound >= 4) { predict(); return; }
+      ghostNames.forEach(g => {
+        ghostPositions[g] += Math.floor(Math.random() * 4);
+        if (ghostPositions[g] > 10) ghostPositions[g] = 10;
+      });
+      currentRound++;
+      showRaceBoard();
+    }
+
+    function showRandomHint() {
+      let remaining = allHints.filter(h => !revealedHints.has(h));
+      if (remaining.length === 0) return alert("모든 힌트 공개됨");
+      let h = remaining[Math.floor(Math.random() * remaining.length)];
+      revealedHints.add(h);
+      alert("무작위 힌트: " + h);
+    }
+
+    function predict() {
+      let html = "<h3>최종 순위 예측</h3>";
+      teams.forEach((team, tIdx) => {
+        html += `<div style="border:1px solid #ccc; padding:10px; margin-bottom:10px;"><strong>${team.name}</strong><br/>`;
+        for (let i = 1; i <= 8; i++) {
+          html += `${i}위: <select id="t${tIdx}-r${i}">` +
+            ghostNames.map(g => `<option value="${g}">${g}</option>`).join("") +
+            "</select><br/>";
+        }
+        html += "</div>";
+      });
+      html += `<button onclick="submitAllPredictions()">예측 제출</button>`;
+      document.getElementById("app").innerHTML = html;
+    }
+
+    function submitAllPredictions() {
+      let allValid = true;
+      teams.forEach((team, tIdx) => {
+        const prediction = [];
+        for (let i = 1; i <= 8; i++) {
+          const val = document.getElementById(`t${tIdx}-r${i}`).value;
+          if (prediction.includes(val)) {
+            alert(`${team.name} 팀의 예측에 중복이 있습니다.`);
+            allValid = false;
+            return;
+          }
+          prediction.push(val);
+        }
+        team.prediction = prediction;
+      });
+      if (!allValid) return;
+      doFinalRound();
+    }
+
+    function doFinalRound() {
+      ghostNames.forEach(g => {
+        ghostPositions[g] += Math.floor(Math.random() * 4);
+        if (ghostPositions[g] > 10) ghostPositions[g] = 10;
+      });
+      const actual = Object.entries(ghostPositions).sort((a, b) => b[1] - a[1]).map(x => x[0]);
+      let html = "<h3>🏁 최종 결과 (5라운드 후)</h3><ul>";
+      actual.forEach((g, i) => { html += `<li>${i + 1}위: ${g}</li>`; });
+      html += "</ul><h4>팀별 점수</h4><ul>";
+      teams.forEach(team => {
+        let correct = 0;
+        for (let i = 0; i < 8; i++) {
+          if (team.prediction[i] === actual[i]) correct++;
+        }
+        team.score = correct;
+        html += `<li>${team.name}: ${correct}개 맞춤</li>`;
+      });
+      html += "</ul>";
+      document.getElementById("app").innerHTML = html;
+    }
+
+    function getEmoji(name) {
+      const map = {
+        "드라큘라": "🧛", "프랑켄슈타인": "🧟", "달걀귀신": "🥚", "구미호": "🦊",
+        "처녀귀신": "👰‍♀️", "늑대인간": "🐺", "호박귀신": "🎃", "해골": "💀"
+      };
+      return map[name] || "👻";
+    }
+
+    window.onload = setupGame;
+  </script>
+</body>
+</html>
