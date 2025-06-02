@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>👻 유령 운동회 - 최종본</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { font-family: 'Arial'; background: #f0f0f0; text-align: center; padding: 20px; }
+    h1 { background: #222; color: #fff; padding: 20px; margin: -20px -20px 20px; }
+    .container { max-width: 800px; margin: auto; background: #fff; padding: 20px; border-radius: 10px; }
+    .track { display: flex; justify-content: start; margin: 8px 0; }
+    .cell { width: 30px; height: 30px; border: 1px solid #ccc; background: #eee; margin-right: 2px; }
+    .ghost { background-color: #ffd700; font-weight: bold; color: #000; }
+    button, select, input { padding: 8px 12px; margin: 5px; font-size: 1rem; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <h1>👻 유령 운동회</h1>
+  <div class="container" id="app">게임을 시작하세요...</div>
+  <script>
+    const ghostNames = ["드라큘라", "프랑켄슈타인", "달걀귀신", "구미호", "처녀귀신", "늑대인간", "호박귀신", "해골"];
+    const ghostColors = ["#ff9999","#ffcc99","#ffff99","#ccff99","#99ffff","#99ccff","#cc99ff","#ff99cc"];
+    const ghostMoves = {
+      "해골": [3,3,2,2,3], "구미호": [3,2,2,2,3], "달걀귀신": [2,2,2,2,3],
+      "호박귀신": [1,2,2,2,3], "드라큘라": [2,2,1,2,2], "늑대인간": [1,1,2,2,2],
+      "처녀귀신": [2,1,1,1,2], "프랑켄슈타인": [1,1,1,1,2]
+    };
+    const allHints = [
+      "구미호는 해골보다 느리게 도착했다.","프랑켄슈타인은 7등보다도 늦었다.","달걀귀신은 드라큘라보다 앞서 도착했다.",
+      "호박귀신은 중위권이다.","늑대인간은 달걀귀신보다 뒤에 있다.","해골은 단 한 번도 0칸 이동을 하지 않았다.",
+      "드라큘라는 호박귀신보다 뒤에서 골인했다.","처녀귀신은 하위권이다.","프랑켄슈타인은 해골과 같은 칸에 도달하지 못했다.",
+      "해골은 5라운드 내내 가장 빠르게 이동했다.","구미호는 1등이 아니었다.","달걀귀신은 3등이다.",
+      "드라큘라는 중위권이다.","프랑켄슈타인은 매 라운드 모두 1칸 이하로만 움직였다.","늑대인간은 6등이다.","처녀귀신은 드라큘라보다 느리다."
+    ];
+    let round = 0;
+    let positions = {};
+    let teams = [];
+    let revealed = new Set();
+
+    function init() {
+      document.getElementById("app").innerHTML = `<h2>팀 수를 선택하세요</h2>
+        <select id="teamCount">${[2,3,4,5,6,7,8].map(n => `<option value="${n}">${n}팀</option>`).join("")}</select><br>
+        <button onclick="inputTeamNames()">다음</button>`;
+    }
+
+    function inputTeamNames() {
+      const count = parseInt(document.getElementById("teamCount").value);
+      let html = `<h2>팀 이름을 입력하세요</h2>`;
+      for (let i = 0; i < count; i++) {
+        html += `팀 ${i+1}: <input id="team${i}" /><br>`;
+      }
+      html += `<button onclick="selectHints(${count})">힌트 선택으로</button>`;
+      document.getElementById("app").innerHTML = html;
+    }
+
+    function selectHints(count) {
+      teams = [];
+      for (let i = 0; i < count; i++) {
+        const name = document.getElementById("team" + i).value.trim();
+        if (!name) return alert("팀 이름을 모두 입력해주세요.");
+        teams.push({ name, hints: [] });
+      }
+      let html = `<h2>팀별 힌트를 선택하세요</h2>`;
+      teams.forEach((team, idx) => {
+        html += `<h3>${team.name}</h3>`;
+        allHints.forEach((h, i) => {
+          html += `<label><input type="checkbox" name="hint${idx}" value="${i}" onchange="limitHints(${idx}, ${count<=3?2:1})"> 힌트 ${i+1}</label><br>`;
+        });
+      });
+      html += `<button onclick="startRace()">경기 시작</button>`;
+      document.getElementById("app").innerHTML = html;
+    }
+
+    function limitHints(idx, max) {
+      const checked = document.querySelectorAll(`input[name="hint${idx}"]:checked`);
+      if (checked.length > max) event.target.checked = false;
+    }
+
+    function startRace() {
+      ghostNames.forEach(g => positions[g] = 0);
+      teams.forEach((t, i) => {
+        t.hints = [...document.querySelectorAll(`input[name="hint${i}"]:checked`)].map(e => allHints[parseInt(e.value)]);
+      });
+      round = 0;
+      showRound();
+    }
+
+    function showRound() {
+      const app = document.getElementById("app");
+      let html = `<h2>라운드 ${round+1}</h2>`;
+      ghostNames.forEach((name, idx) => {
+        html += `<div class="track">`;
+        for (let i = 0; i < 20; i++) {
+          html += `<div class="cell ${positions[name]===i?'ghost':''}" style="${positions[name]===i?'background:'+ghostColors[idx]:''}">${positions[name]===i?name[0]:""}</div>`;
+        }
+        html += `</div>`;
+      });
+      html += round < 3
+        ? `<button onclick="nextRound()">다음 라운드</button>
+           <button onclick="showHint()">무작위 힌트</button>`
+        : `<button onclick="finalPredict()">최종 예측 제출</button>`;
+      app.innerHTML = html;
+    }
+
+    function nextRound() {
+      ghostNames.forEach(g => positions[g] += ghostMoves[g][round]);
+      round++;
+      showRound();
+    }
+
+    function showHint() {
+      let index = prompt("보고 싶은 힌트 번호를 입력하세요 (1~16):");
+      if (!index) return;
+      index = parseInt(index);
+      if (isNaN(index) || index < 1 || index > allHints.length) {
+        alert("1번부터 16번 사이 숫자를 입력해주세요.");
+        return;
+      }
+      const selected = allHints[index - 1];
+      alert("💡 힌트 " + index + ": " + selected);
+    }
+
+    function finalPredict() {
+      let html = `<h2>최종 순위 예측</h2>`;
+      teams.forEach((t, i) => {
+        html += `<h3>${t.name}</h3>`;
+        for (let j = 0; j < 8; j++) {
+          html += `${j+1}위: <select id="p${i}_${j}">${ghostNames.map(g=>`<option>${g}</option>`)}</select><br>`;
+        }
+      });
+      html += `<button onclick="grade()">제출</button>`;
+      document.getElementById("app").innerHTML = html;
+    }
+
+    function grade() {
+      const finalRank = Object.entries(positions).sort((a,b)=>b[1]-a[1]).map(x=>x[0]);
+      let html = `<h2>🏁 최종 결과</h2><ol>${finalRank.map(g=>`<li>${g}</li>`).join("")}</ol>`;
+      teams.forEach((t,i) => {
+        let score = 0;
+        for (let j = 0; j < 8; j++) {
+          const v = document.getElementById(`p${i}_${j}`).value;
+          if (v === finalRank[j]) score++;
+        }
+        html += `<p><strong>${t.name}</strong>: ${score}점</p>`;
+      });
+      document.getElementById("app").innerHTML = html;
+    }
+
+    window.onload = init;
+  </script>
+</body>
+</html>
